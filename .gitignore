@@ -1,0 +1,12 @@
+# Build directories
+build/
+cmake-build-debug/
+bin/
+obj/
+
+# IDE files
+.idea/
+.vscode/
+
+# Raylib fetched content (CMake handles this)
+_deps/
