@@ -19,16 +19,6 @@ namespace Constants {
     const Color BullyAwarenessPink = { 255, 105, 180, 255 }; // Hot Pink
 }
 
-enum class GameState {
-    Menu,
-    Playing
-};
-
-enum class GameMode {
-    PvP,
-    PvAI
-};
-
 struct Paddle {
     float x, y;
     float width, height;
@@ -39,20 +29,13 @@ struct Paddle {
         DrawRectangleRec({ x, y, width, height }, Constants::BullyAwarenessPink);
     }
 
-    void Update(bool isLeft, bool isAI, float ballY) {
+    void Update(bool isLeft) {
         if (isLeft) {
             if (IsKeyDown(KEY_W)) y -= speed * GetFrameTime();
             if (IsKeyDown(KEY_S)) y += speed * GetFrameTime();
         } else {
-            if (isAI) {
-                // Simple AI: try to center the paddle with the ball
-                float paddleCenter = y + height / 2.0f;
-                if (paddleCenter < ballY - 10) y += speed * 0.8f * GetFrameTime(); // Slightly slower AI
-                else if (paddleCenter > ballY + 10) y -= speed * 0.8f * GetFrameTime();
-            } else {
-                if (IsKeyDown(KEY_UP)) y -= speed * GetFrameTime();
-                if (IsKeyDown(KEY_DOWN)) y += speed * GetFrameTime();
-            }
+            if (IsKeyDown(KEY_UP)) y -= speed * GetFrameTime();
+            if (IsKeyDown(KEY_DOWN)) y += speed * GetFrameTime();
         }
 
         // Keep paddle on screen
@@ -74,8 +57,12 @@ struct Ball {
         x += speedX * GetFrameTime();
         y += speedY * GetFrameTime();
 
-        // Bounce off top and bottom
-        if (y - radius < 0 || y + radius > Constants::ScreenHeight) {
+        // Bounce off top and bottom with clamping to prevent getting stuck
+        if (y - radius < 0) {
+            y = radius;
+            speedY *= -1;
+        } else if (y + radius > Constants::ScreenHeight) {
+            y = Constants::ScreenHeight - radius;
             speedY *= -1;
         }
     }
@@ -91,9 +78,6 @@ int main() {
     // Initialization
     SetConfigFlags(FLAG_MSAA_4X_HINT);
     InitWindow(Constants::ScreenWidth, Constants::ScreenHeight, "PingPong - Bully Awareness Month");
-
-    GameState currentState = GameState::Menu;
-    GameMode currentMode = GameMode::PvP;
 
     Paddle leftPaddle{ 
         .x = 20, 
@@ -125,87 +109,56 @@ int main() {
 
     // Main game loop
     while (!WindowShouldClose()) {
-        if (currentState == GameState::Menu) {
-            // Menu Logic
-            if (IsKeyPressed(KEY_ONE)) {
-                currentMode = GameMode::PvP;
-                currentState = GameState::Playing;
+        // Update
+        leftPaddle.Update(true);
+        rightPaddle.Update(false);
+        ball.Update();
+
+        // Collisions with paddles - with repositioning to prevent tunneling
+        if (CheckCollisionCircleRec({ ball.x, ball.y }, ball.radius, { leftPaddle.x, leftPaddle.y, leftPaddle.width, leftPaddle.height })) {
+            if (ball.speedX < 0) {
+                ball.speedX *= -1.1f; // Increase speed slightly
+                ball.x = leftPaddle.x + leftPaddle.width + ball.radius; // Push out of paddle
+                ball.speedY = (ball.y - (leftPaddle.y + leftPaddle.height / 2)) / (leftPaddle.height / 2) * Constants::BallSpeedY;
             }
-            if (IsKeyPressed(KEY_TWO)) {
-                currentMode = GameMode::PvAI;
-                currentState = GameState::Playing;
-            }
-
-            // Menu Draw
-            BeginDrawing();
-            ClearBackground(BLACK);
-
-            DrawText("PING PONG", Constants::ScreenWidth / 2 - MeasureText("PING PONG", 60) / 2, 80, 60, Constants::BullyAwarenessPink);
-            DrawText("1. Player vs Player", Constants::ScreenWidth / 2 - MeasureText("1. Player vs Player", 20) / 2, 220, 20, WHITE);
-            DrawText("2. Player vs Computer", Constants::ScreenWidth / 2 - MeasureText("2. Player vs Computer", 20) / 2, 260, 20, WHITE);
-            DrawText("Press 1 or 2 to start", Constants::ScreenWidth / 2 - MeasureText("Press 1 or 2 to start", 15) / 2, 350, 15, GRAY);
-
-            EndDrawing();
-        } else {
-            // Playing Logic
-            leftPaddle.Update(true, false, ball.y);
-            rightPaddle.Update(false, (currentMode == GameMode::PvAI), ball.y);
-            ball.Update();
-
-            // Collisions with paddles
-            if (CheckCollisionCircleRec({ ball.x, ball.y }, ball.radius, { leftPaddle.x, leftPaddle.y, leftPaddle.width, leftPaddle.height })) {
-                if (ball.speedX < 0) {
-                    ball.speedX *= -1.1f; // Increase speed slightly
-                    ball.speedY = (ball.y - (leftPaddle.y + leftPaddle.height / 2)) / (leftPaddle.height / 2) * Constants::BallSpeedY;
-                }
-            }
-
-            if (CheckCollisionCircleRec({ ball.x, ball.y }, ball.radius, { rightPaddle.x, rightPaddle.y, rightPaddle.width, rightPaddle.height })) {
-                if (ball.speedX > 0) {
-                    ball.speedX *= -1.1f; // Increase speed slightly
-                    ball.speedY = (ball.y - (rightPaddle.y + rightPaddle.height / 2)) / (rightPaddle.height / 2) * Constants::BallSpeedY;
-                }
-            }
-
-            // Scoring
-            if (ball.x < 0) {
-                rightPaddle.score++;
-                ball.Reset();
-            }
-            if (ball.x > Constants::ScreenWidth) {
-                leftPaddle.score++;
-                ball.Reset();
-            }
-
-            // Return to menu
-            if (IsKeyPressed(KEY_ESCAPE)) {
-                currentState = GameState::Menu;
-                leftPaddle.score = 0;
-                rightPaddle.score = 0;
-                ball.Reset();
-            }
-
-            // Playing Draw
-            BeginDrawing();
-            ClearBackground(BLACK);
-
-            // Draw middle line
-            for (int i = 0; i < Constants::ScreenHeight; i += 20) {
-                DrawRectangle(Constants::ScreenWidth / 2 - 1, i, 2, 10, GRAY);
-            }
-
-            leftPaddle.Draw();
-            rightPaddle.Draw();
-            ball.Draw();
-
-            // Draw scores using C++20 std::format
-            DrawText(std::format("{}", leftPaddle.score).c_str(), Constants::ScreenWidth / 4, 20, 40, WHITE);
-            DrawText(std::format("{}", rightPaddle.score).c_str(), 3 * Constants::ScreenWidth / 4, 20, 40, WHITE);
-
-            DrawText("ESC to Menu", 10, Constants::ScreenHeight - 20, 15, DARKGRAY);
-
-            EndDrawing();
         }
+
+        if (CheckCollisionCircleRec({ ball.x, ball.y }, ball.radius, { rightPaddle.x, rightPaddle.y, rightPaddle.width, rightPaddle.height })) {
+            if (ball.speedX > 0) {
+                ball.speedX *= -1.1f; // Increase speed slightly
+                ball.x = rightPaddle.x - ball.radius; // Push out of paddle
+                ball.speedY = (ball.y - (rightPaddle.y + rightPaddle.height / 2)) / (rightPaddle.height / 2) * Constants::BallSpeedY;
+            }
+        }
+
+        // Scoring
+        if (ball.x < 0) {
+            rightPaddle.score++;
+            ball.Reset();
+        }
+        if (ball.x > Constants::ScreenWidth) {
+            leftPaddle.score++;
+            ball.Reset();
+        }
+
+        // Draw
+        BeginDrawing();
+        ClearBackground(BLACK);
+
+        // Draw middle line
+        for (int i = 0; i < Constants::ScreenHeight; i += 20) {
+            DrawRectangle(Constants::ScreenWidth / 2 - 1, i, 2, 10, GRAY);
+        }
+
+        leftPaddle.Draw();
+        rightPaddle.Draw();
+        ball.Draw();
+
+        // Draw scores using C++20 std::format
+        DrawText(std::format("{}", leftPaddle.score).c_str(), Constants::ScreenWidth / 4, 20, 40, WHITE);
+        DrawText(std::format("{}", rightPaddle.score).c_str(), 3 * Constants::ScreenWidth / 4, 20, 40, WHITE);
+
+        EndDrawing();
     }
 
     CloseWindow();
