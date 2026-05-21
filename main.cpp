@@ -21,7 +21,8 @@ namespace Constants {
 
 enum class GameState {
     Menu,
-    Playing
+    Playing,
+    GameOver
 };
 
 enum class GameMode {
@@ -74,8 +75,12 @@ struct Ball {
         x += speedX * GetFrameTime();
         y += speedY * GetFrameTime();
 
-        // Bounce off top and bottom
-        if (y - radius < 0 || y + radius > Constants::ScreenHeight) {
+        // Bounce off top and bottom with clamping to prevent getting stuck
+        if (y - radius < 0) {
+            y = radius;
+            speedY *= -1;
+        } else if (y + radius > Constants::ScreenHeight) {
+            y = Constants::ScreenHeight - radius;
             speedY *= -1;
         }
     }
@@ -94,6 +99,9 @@ int main() {
 
     GameState currentState = GameState::Menu;
     GameMode currentMode = GameMode::PvP;
+    int highScore = 0;
+    std::string winnerName = "";
+    std::string loserMessage = "";
 
     Paddle leftPaddle{ 
         .x = 20, 
@@ -130,32 +138,43 @@ int main() {
             if (IsKeyPressed(KEY_ONE)) {
                 currentMode = GameMode::PvP;
                 currentState = GameState::Playing;
+                leftPaddle.score = 0;
+                rightPaddle.score = 0;
             }
             if (IsKeyPressed(KEY_TWO)) {
                 currentMode = GameMode::PvAI;
                 currentState = GameState::Playing;
+                leftPaddle.score = 0;
+                rightPaddle.score = 0;
             }
 
             // Menu Draw
             BeginDrawing();
             ClearBackground(BLACK);
 
-            DrawText("PING PONG", Constants::ScreenWidth / 2 - MeasureText("PING PONG", 60) / 2, 80, 60, Constants::BullyAwarenessPink);
-            DrawText("1. Player vs Player", Constants::ScreenWidth / 2 - MeasureText("1. Player vs Player", 20) / 2, 220, 20, WHITE);
-            DrawText("2. Player vs Computer", Constants::ScreenWidth / 2 - MeasureText("2. Player vs Computer", 20) / 2, 260, 20, WHITE);
-            DrawText("Press 1 or 2 to start", Constants::ScreenWidth / 2 - MeasureText("Press 1 or 2 to start", 15) / 2, 350, 15, GRAY);
+            DrawText("PING PONG", Constants::ScreenWidth / 2 - MeasureText("PING PONG", 60) / 2, 60, 60, Constants::BullyAwarenessPink);
+            DrawText("1. Player vs Player", Constants::ScreenWidth / 2 - MeasureText("1. Player vs Player", 20) / 2, 180, 20, WHITE);
+            DrawText("2. Player vs Computer", Constants::ScreenWidth / 2 - MeasureText("2. Player vs Computer", 20) / 2, 220, 20, WHITE);
+            
+            if (highScore > 0) {
+                DrawText(std::format("High Score (vs AI): {}", highScore).c_str(), Constants::ScreenWidth / 2 - MeasureText(std::format("High Score (vs AI): {}", highScore).c_str(), 20) / 2, 280, 20, YELLOW);
+            }
+
+            DrawText("First to 10 points wins!", Constants::ScreenWidth / 2 - MeasureText("First to 10 points wins!", 15) / 2, 330, 15, GRAY);
+            DrawText("Press 1 or 2 to start", Constants::ScreenWidth / 2 - MeasureText("Press 1 or 2 to start", 15) / 2, 380, 15, GRAY);
 
             EndDrawing();
-        } else {
+        } else if (currentState == GameState::Playing) {
             // Playing Logic
             leftPaddle.Update(true, false, ball.y);
             rightPaddle.Update(false, (currentMode == GameMode::PvAI), ball.y);
             ball.Update();
 
-            // Collisions with paddles
+            // Collisions with paddles - with repositioning to prevent tunneling
             if (CheckCollisionCircleRec({ ball.x, ball.y }, ball.radius, { leftPaddle.x, leftPaddle.y, leftPaddle.width, leftPaddle.height })) {
                 if (ball.speedX < 0) {
                     ball.speedX *= -1.1f; // Increase speed slightly
+                    ball.x = leftPaddle.x + leftPaddle.width + ball.radius; // Push out of paddle
                     ball.speedY = (ball.y - (leftPaddle.y + leftPaddle.height / 2)) / (leftPaddle.height / 2) * Constants::BallSpeedY;
                 }
             }
@@ -163,6 +182,7 @@ int main() {
             if (CheckCollisionCircleRec({ ball.x, ball.y }, ball.radius, { rightPaddle.x, rightPaddle.y, rightPaddle.width, rightPaddle.height })) {
                 if (ball.speedX > 0) {
                     ball.speedX *= -1.1f; // Increase speed slightly
+                    ball.x = rightPaddle.x - ball.radius; // Push out of paddle
                     ball.speedY = (ball.y - (rightPaddle.y + rightPaddle.height / 2)) / (rightPaddle.height / 2) * Constants::BallSpeedY;
                 }
             }
@@ -170,18 +190,31 @@ int main() {
             // Scoring
             if (ball.x < 0) {
                 rightPaddle.score++;
-                ball.Reset();
+                if (rightPaddle.score >= 10) {
+                    currentState = GameState::GameOver;
+                    winnerName = (currentMode == GameMode::PvAI) ? "Computer" : "Player 2";
+                    loserMessage = (currentMode == GameMode::PvAI) ? "You are a loser!" : "Player 1 is a loser!";
+                } else {
+                    ball.Reset();
+                }
             }
             if (ball.x > Constants::ScreenWidth) {
                 leftPaddle.score++;
-                ball.Reset();
+                if (leftPaddle.score >= 10) {
+                    currentState = GameState::GameOver;
+                    winnerName = "Player 1";
+                    loserMessage = (currentMode == GameMode::PvAI) ? "Computer is a loser!" : "Player 2 is a loser!";
+                    if (currentMode == GameMode::PvAI && leftPaddle.score > highScore) {
+                        highScore = leftPaddle.score;
+                    }
+                } else {
+                    ball.Reset();
+                }
             }
 
             // Return to menu
             if (IsKeyPressed(KEY_ESCAPE)) {
                 currentState = GameState::Menu;
-                leftPaddle.score = 0;
-                rightPaddle.score = 0;
                 ball.Reset();
             }
 
@@ -203,6 +236,24 @@ int main() {
             DrawText(std::format("{}", rightPaddle.score).c_str(), 3 * Constants::ScreenWidth / 4, 20, 40, WHITE);
 
             DrawText("ESC to Menu", 10, Constants::ScreenHeight - 20, 15, DARKGRAY);
+
+            EndDrawing();
+        } else if (currentState == GameState::GameOver) {
+            // GameOver Logic
+            if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_ESCAPE) || IsKeyPressed(KEY_SPACE)) {
+                currentState = GameState::Menu;
+                ball.Reset();
+            }
+
+            // GameOver Draw
+            BeginDrawing();
+            ClearBackground(BLACK);
+
+            DrawText("GAME OVER", Constants::ScreenWidth / 2 - MeasureText("GAME OVER", 50) / 2, 100, 50, RED);
+            DrawText(std::format("{} Wins!", winnerName).c_str(), Constants::ScreenWidth / 2 - MeasureText(std::format("{} Wins!", winnerName).c_str(), 30) / 2, 180, 30, WHITE);
+            DrawText(loserMessage.c_str(), Constants::ScreenWidth / 2 - MeasureText(loserMessage.c_str(), 20) / 2, 240, 20, Constants::BullyAwarenessPink);
+            
+            DrawText("Press ENTER to return to Menu", Constants::ScreenWidth / 2 - MeasureText("Press ENTER to return to Menu", 15) / 2, 350, 15, GRAY);
 
             EndDrawing();
         }
